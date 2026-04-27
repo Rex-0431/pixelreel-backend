@@ -1,27 +1,40 @@
 import express from "express";
 import cors from "cors";
+import OpenAI from "openai";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.get("/", (req, res) => {
-  res.send("PixelReel backend is running 🚀");
+const client = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Example API route
+app.get("/", (req, res) => {
+  res.send("PixelReel backend running 🚀");
+});
+
 app.post("/generate-video", async (req, res) => {
   const { prompt } = req.body;
 
-  if (!prompt) {
-    return res.status(400).json({ error: "Prompt is required" });
-  }
+  try {
+    const image = await client.images.generate({
+      model: "gpt-image-1",
+      prompt: prompt,
+      size: "1024x1024"
+    });
 
-  // Dummy response (we'll connect real video generation later)
-  res.json({
-    message: "Video generation started",
-    prompt,
-  });
+    const imageUrl = image.data[0].url;
+
+    res.json({
+      message: "Visual generated",
+      image: imageUrl
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong" });
+  }
 });
 
 const PORT = 5000;
