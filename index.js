@@ -1,75 +1,67 @@
 import express from "express";
 import cors from "cors";
 import multer from "multer";
-import ffmpeg from "fluent-ffmpeg";
-import ffmpegPath from "ffmpeg-static";
 import fs from "fs";
-
-ffmpeg.setFfmpegPath(ffmpegPath);
+import fetch from "node-fetch";
 
 const app = express();
 app.use(cors());
+app.use(express.json());
 
 const upload = multer({ dest: "uploads/" });
 
-app.post("/generate-video", upload.single("image"), (req, res) => {
+const REPLICATE_API_TOKEN = "PASTE_YOUR_TOKEN_HERE";
+
+app.post("/generate-video", upload.single("image"), async (req, res) => {
   try {
-    const inputPath = req.file.path;
-    const duration = parseInt(req.body.duration) || 3;
-    const instructions = (req.body.instructions || "").toLowerCase();
+    const prompt = req.body.instructions || "cinematic video";
+    const duration = parseInt(req.body.duration) || 5;
 
-    const outputPath = "output.mp4";
+    const imageBuffer = fs.readFileSync(req.file.path);
+    const base64Image = imageBuffer.toString("base64");
 
-    // 🎯 Build filters from instructions
-    let filters = [];
-
-    if (instructions.includes("zoom")) {
-      filters.push("zoompan=z='min(zoom+0.0015,1.5)':d=125");
-    }
-
-    if (instructions.includes("black and white")) {
-      filters.push("hue=s=0");
-    }
-
-    if (instructions.includes("bright")) {
-      filters.push("eq=brightness=0.1");
-    }
-
-    const filterString = filters.length ? filters.join(",") : null;
-
-    // 🎬 FFmpeg command
-    let command = ffmpeg()
-      .input(inputPath)
-      .inputOptions(["-loop 1"])
-      .outputOptions([
-        `-t ${duration}`,
-        "-vf scale=640:480",
-        "-pix_fmt yuv420p"
-      ]);
-
-    if (filterString) {
-      command = command.videoFilters(filterString);
-    }
-
-    command
-      .output(outputPath)
-      .on("end", () => {
-        res.download(outputPath, () => {
-          // cleanup files after sending
-          fs.unlinkSync(inputPath);
-          fs.unlinkSync(outputPath);
-        });
+    // STEP 1: Start prediction
+    const response = await fetch("https://api.replicate.com/v1/predictions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Token ${REPLICATE_API_TOKEN}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        version: "a40e0c5f4e3d2e0cbbf0e6a6c5c4c3b2e1f0d9c8b7a6", 
+        input: {
+          image: `data:image/png;base64,${base64Image}`,
+          prompt: prompt,
+          num_frames: duration * 8
+        }
       })
-      .on("error", (err) => {
-        console.log("FFMPEG ERROR:", err);
-        res.status(500).send("Video generation failed");
-      })
-      .run();
+    });
+
+    let prediction = await response.json();
+
+    // STEP 2: Poll until ready
+    while (prediction.status !== "succeeded" && prediction.status !== "failed") {
+      await new Promise(r => setTimeout(r, 3000));
+
+      const poll = await fetch(prediction.urls.get, {
+        headers: {
+          "Authorization": `Token ${REPLICATE_API_TOKEN}`
+        }
+      });
+
+      prediction = await poll.json();
+    }
+
+    if (prediction.status === "succeeded") {
+      res.json({ video: prediction.output[0] });
+    } else {
+      res.status(500).json({ error: "Video generation failed" });
+    }
 
   } catch (err) {
     console.log(err);
-    res.status(500).send("Server error");
+    res.status(500).send("Error");
   }
 });
 
-app.listen(5000, () => console.log("Server running on 5000"));
+app.listen(5000, () => console.log("AI video backend running"));
