@@ -10,7 +10,7 @@ app.use(express.json());
 
 const upload = multer({ dest: "uploads/" });
 
-const REPLICATE_API_TOKEN = "PASTE_YOUR_TOKEN_HERE";
+const REPLICATE_API_TOKEN = "r8_1Sg1ZABHpD2xO57osbfXhCJ6MhuN9bj3Cm6zx";
 
 app.post("/generate-video", upload.single("image"), async (req, res) => {
   try {
